@@ -83,6 +83,6 @@ def data_gathering(client, pair='BTCUSDT', interval=None, period=None, start=Non
 def run():
     client = market_connection()
 
-    data = data_gathering(client,interval=client.KLINE_INTERVAL_1MINUTE, period='10d')
+    data = data_gathering(client,interval=client.KLINE_INTERVAL_1HOUR, period='1d')
 
-    return data.iloc[0]
+    return data
