@@ -3,13 +3,32 @@ from binance.client import Client
 from dateutil.relativedelta import relativedelta
 from datetime import datetime
 import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+import numpy as np
 
 
-def market_connection(api_key=api, secret_key=secret):
+def market_connection(api_key: str = api, secret_key: str = secret) -> Client:
+    """
+    Makes a connection with binance API
+
+    :param api_key: Binance API key
+    :param secret_key: Binance API secret key
+    :return: Binance Client object
+    """
+
     return Client(api_key, secret_key)
 
 
-def data_range(period=None, start=None, stop=None):
+def data_range(period: str = None, start: str = None, stop: str = None) -> (int, int):
+    """
+    Sets a correct data range
+
+    :param period: Time period specified by a number followed by one of the options: 'y', 'm', 'd', 'h', 'min', 's'
+    :param start: Date in a format of a string e.g. '2022-08-12'
+    :param stop: Date in a format of a string e.g. '2023-08-13'
+    :return: start, stop in milliseconds
+    """
+
     try:
         if period is not None:
             if start is None and stop is None:
@@ -49,40 +68,127 @@ def data_range(period=None, start=None, stop=None):
         raise Exception(e)
 
 
-def data_gathering(client, pair='BTCUSDT', interval=None, period=None, start=None, stop=None):
+def data_gathering(client: Client, pair: str = 'BTCUSDT', interval: str = None, period: str = None, start: str = None,
+                   stop: str = None) -> pd.DataFrame:
+    """
+    Gathers data
+
+    :param client: Binance Client object
+    :param pair: Pair for which data is extracted
+    :param interval: Interval to consider
+    :param period: Time period specified by a number followed by one of the options: 'y', 'm', 'd', 'h', 'min', 's'
+    :param start: Date in a format of a string e.g. '2022-08-12'
+    :param stop: Date in a format of a string e.g. '2023-08-13'
+    :return: pd.DataFrame containing financial data for chosen pair
+    """
+
     if interval is None:
         interval = client.KLINE_INTERVAL_1HOUR
 
-    start, stop = data_range(period=period, start=start, stop=stop)
+    start_, stop_ = data_range(period=period, start=start, stop=stop)
 
-    trades = client.get_klines(symbol=pair, interval=interval, startTime=start, endTime=stop, limit=1000)
-
-
-
-
-    list_of_trades = []
+    list_of_trades_ = []
     while True:
-        trades = client.get_klines(symbol=pair, interval=interval, startTime=start, endTime=stop, limit=1000)
-        list_of_trades.extend(trades[:-1])
-        if trades[-1][0] == stop:
+        trades_ = client.get_klines(symbol=pair, interval=interval, startTime=start_, endTime=stop_, limit=1000)
+        list_of_trades_.extend(trades_[:-1])
+        if trades_[-1][0] == stop_:
             break
         else:
-            start = trades[-1][0]
+            start_ = trades_[-1][0]
 
-    frame = pd.DataFrame(list_of_trades,
-                         columns=['open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset',
-                                  'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume',
-                                  'ignore'])
-    filtered_frame = frame[['open_time', 'close_time', 'open', 'high', 'low', 'close', 'volume']]
-    filtered_frame['open_time'] = pd.to_datetime(filtered_frame['open_time'], unit='ms')
-    filtered_frame['close_time'] = pd.to_datetime(filtered_frame['close_time'], unit='ms')
+    frame_ = pd.DataFrame(list_of_trades_,
+                          columns=['open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset',
+                                   'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume',
+                                   'ignore'])
 
-    return filtered_frame
+    filtered_frame_ = pd.DataFrame()
+
+    filtered_frame_['open_time'] = pd.to_datetime(frame_['open_time'], unit='ms')
+    filtered_frame_['close_time'] = pd.to_datetime(frame_['close_time'], unit='ms')
+
+    for name_ in ['open', 'high', 'low', 'close', 'volume']:
+        filtered_frame_[name_] = pd.to_numeric(frame_[name_])
+
+    return filtered_frame_
 
 
-def run():
-    client = market_connection()
+# def indicators_creation(data: pd.DataFrame, ) -> pd.DataFrame:
+#     """
+#     Creates variables
+#
+#     :param data: pd.DataFrame containing financial data for chosen pair
+#     :return: pd.DataFrame with indicators
+#     """
+#
+#     open_ = data['open']
+#     high_ = data['high']
+#     low_ = data['low']
+#     close_ = data['close']
+#     volume_ = data['volume']
+#
+#     indicators_frame_ = pd.DataFrame()
+#
+#     return indicators_frame_
 
-    data = data_gathering(client,interval=client.KLINE_INTERVAL_1HOUR, period='1d')
 
-    return data
+# def features_creation(data: pd.DataFrame, indicators: pd.DataFrame) -> pd.DataFrame:
+#     """
+#     Create meaningful features
+#
+#     :param data: pd.DataFrame containing financial data for chosen pair
+#     :param indicators: pd.DataFrame with indicators
+#     :return: pd.DataFrame with new features
+#     """
+#
+#     features_frame_ = pd.DataFrame()
+#
+#     return features_frame_
+
+
+def split_data(data: pd.DataFrame, split: float = 0.7) -> (pd.DataFrame, pd.DataFrame):
+    """
+    Splits data two train and test set
+
+    :param data: pd.DataFrame containing financial data for chosen pair
+    :param split: Float value of a split from range (0, 1)
+    :return: Two pd.DataFrames
+    """
+    index_ = int(data.shape[0] * split)
+
+    train_ = data.iloc[:index_, 2:]
+    test_ = data.iloc[index_:, 2:]
+
+    train_ = train_.reset_index().drop(columns=['index'])
+    test_ = test_.reset_index().drop(columns=['index'])
+
+    return train_, test_
+
+
+def input_preparation(data: pd.DataFrame, lag: int = 60) -> (np.array, np.array, MinMaxScaler):
+    """
+    Prepares the data input
+
+    :param data: pd.DataFrame containing financial data for chosen pair
+    :param lag: Number of periods to delay
+    :return: Transformed x and y arrays and a scaler
+    """
+    target_index_ = None
+    for index, name in enumerate(data.columns):
+        if name == 'close':
+            target_index_ = index
+            break
+
+    if target_index_ is None:
+        raise KeyError("No target column")
+
+    scaler_ = MinMaxScaler(feature_range=(0, 1))
+    scaled_set_ = scaler_.fit_transform(data)
+    x_ = []
+    y_ = []
+    for i in range(lag, data.shape[0]):
+        x_.append(scaled_set_[i - lag:i])
+        y_.append(scaled_set_[i, target_index_])
+
+    x_, y_ = np.array(x_), np.array(y_)
+
+    return x_, y_, scaler_
