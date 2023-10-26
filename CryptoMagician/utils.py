@@ -1,10 +1,15 @@
+from typing import Tuple
+
+from pandas import DataFrame
+
 from credentials import api, secret
 from binance.client import Client
 from dateutil.relativedelta import relativedelta
 from datetime import datetime
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
+import joblib as jb
 import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 
 
 def market_connection(api_key: str = api, secret_key: str = secret) -> Client:
@@ -68,8 +73,8 @@ def data_range(period: str = None, start: str = None, stop: str = None) -> (int,
         raise Exception(e)
 
 
-def data_gathering(client: Client, pair: str = 'BTCUSDT', interval: str = None, period: str = None, start: str = None,
-                   stop: str = None) -> pd.DataFrame:
+def gather_data(client: Client, pair: str = 'BTCUSDT', interval: str = None, period: str = None, start: str = None,
+                stop: str = None) -> pd.DataFrame:
     """
     Gathers data
 
@@ -79,7 +84,7 @@ def data_gathering(client: Client, pair: str = 'BTCUSDT', interval: str = None, 
     :param period: Time period specified by a number followed by one of the options: 'y', 'm', 'd', 'h', 'min', 's'
     :param start: Date in a format of a string e.g. '2022-08-12'
     :param stop: Date in a format of a string e.g. '2023-08-13'
-    :return: pd.DataFrame containing financial data for chosen pair
+    :return: Dataframe containing financial data for chosen pair
     """
 
     if interval is None:
@@ -112,83 +117,166 @@ def data_gathering(client: Client, pair: str = 'BTCUSDT', interval: str = None, 
     return filtered_frame_
 
 
-# def indicators_creation(data: pd.DataFrame, ) -> pd.DataFrame:
-#     """
-#     Creates variables
-#
-#     :param data: pd.DataFrame containing financial data for chosen pair
-#     :return: pd.DataFrame with indicators
-#     """
-#
-#     open_ = data['open']
-#     high_ = data['high']
-#     low_ = data['low']
-#     close_ = data['close']
-#     volume_ = data['volume']
-#
-#     indicators_frame_ = pd.DataFrame()
-#
-#     return indicators_frame_
-
-
-# def features_creation(data: pd.DataFrame, indicators: pd.DataFrame) -> pd.DataFrame:
-#     """
-#     Create meaningful features
-#
-#     :param data: pd.DataFrame containing financial data for chosen pair
-#     :param indicators: pd.DataFrame with indicators
-#     :return: pd.DataFrame with new features
-#     """
-#
-#     features_frame_ = pd.DataFrame()
-#
-#     return features_frame_
-
-
-def split_data(data: pd.DataFrame, split: float = 0.7) -> (pd.DataFrame, pd.DataFrame):
+def rates_of_return(data: pd.DataFrame) -> pd.DataFrame:
     """
-    Splits data two train and test set
+    Rates of return preparation
 
-    :param data: pd.DataFrame containing financial data for chosen pair
-    :param split: Float value of a split from range (0, 1)
-    :return: Two pd.DataFrames
+    :param data: DataFrame with input values
+    :return: Transformed dataframe with rates of return
     """
-    index_ = int(data.shape[0] * split)
 
-    train_ = data.iloc[:index_, 2:]
-    test_ = data.iloc[index_:, 2:]
+    tmp_ = pd.DataFrame()
+    for column in data.columns:
+        tmp_[column] = data[column].pct_change() * 100
 
-    train_ = train_.reset_index().drop(columns=['index'])
-    test_ = test_.reset_index().drop(columns=['index'])
+    return tmp_.dropna()
+
+
+def define_target(value: float) -> float:
+    """
+    Prepare the target variable
+
+    :param value: Value on which the target variable is based
+    :return: Target variable
+    """
+
+    # strong bull signal
+    if value >= 1.0:
+        result_ = 0
+    # weak bull signal
+    elif value >= 0.5:
+        result_ = 1
+    # consolidation phase
+    elif value >= -0.5:
+        result_ = 2
+    # weak bear signal
+    elif value >= -1.0:
+        result_ = 3
+    # strong bear signal
+    else:
+        result_ = 4
+
+    return result_
+
+
+def lag_series(series: pd.Series, lags: int = 24) -> pd.DataFrame:
+    """
+    Prepare lagged series
+
+    :param series: Series representing target series
+    :param lags: Integer representing number of lags to implement
+    :return: Dataframe with target and lagged values
+    """
+    tmp_ = pd.DataFrame()
+
+    for i in range(1, lags + 1):
+        tmp_[f'{series.name}-lag-{i}'] = series.shift(i)
+
+    tmp_.dropna(inplace=True)
+    return tmp_.reset_index(drop=True)
+
+
+def lag_dataframe(data: pd.DataFrame, target: str = 'close', lags: int = 24) -> pd.DataFrame:
+    """
+    Prepare lagged DataFrame
+
+    :param data: Dataframe representing target DataFrame
+    :param target: Series representing a target
+    :param lags: Integer representing number of lags to implement
+    :return: Dataframe with lagged values
+    """
+    tmp_list_ = []
+
+    for column in data.columns:
+        tmp_list_.append(lag_series(data[column], lags=lags))
+
+    tmp_ = pd.concat(tmp_list_, axis=1)
+
+    # target preparation
+    tmp_target = data[target][lags:].reset_index(drop=True).copy()
+    tmp_['target'] = tmp_target.apply(lambda x: define_target(x))
+
+    return tmp_
+
+
+def train_test_split(data: pd.DataFrame, split: float = 0.8) -> (pd.DataFrame, pd.DataFrame):
+    """
+    Split the data to train and test set
+
+    :param data: Dataframe with target and lagged values
+    :param split: Float value representing a ratio of the split
+    :return: Tuple with data separated into two dataframes
+    """
+    tmp_ = data.copy()
+
+    index_ = int(tmp_.shape[0] * split)
+
+    train_ = tmp_[:index_].reset_index(drop=True)
+    test_ = tmp_[index_:].reset_index(drop=True)
 
     return train_, test_
 
 
-def input_preparation(data: pd.DataFrame, lag: int = 60) -> (np.array, np.array, MinMaxScaler):
+def normalize(x: pd.DataFrame, y: pd.DataFrame = None, exclude: list | None = None) -> (
+        DataFrame | tuple[DataFrame, DataFrame]):
     """
-    Prepares the data input
+    Normalize the dataframe(s)
 
-    :param data: pd.DataFrame containing financial data for chosen pair
-    :param lag: Number of periods to delay
-    :return: Transformed x and y arrays and a scaler
+    :param x: Dataframe to be transformed
+    :param y: Dataframe to be transformed - optional
+    :param exclude: Column names to exclude from parsing - will be added after transformation in the original form
+    :return: Transformed dataframe(s)
     """
-    target_index_ = None
-    for index, name in enumerate(data.columns):
-        if name == 'close':
-            target_index_ = index
-            break
 
-    if target_index_ is None:
-        raise KeyError("No target column")
+    scaler = MinMaxScaler()
 
-    scaler_ = MinMaxScaler(feature_range=(0, 1))
-    scaled_set_ = scaler_.fit_transform(data)
-    x_ = []
-    y_ = []
-    for i in range(lag, data.shape[0]):
-        x_.append(scaled_set_[i - lag:i])
-        y_.append(scaled_set_[i, target_index_])
+    if y is None:
+        if exclude is not None:
+            tmp_x_ = x.drop(columns=exclude, axis=1)
+        else:
+            tmp_x_ = x.copy()
 
-    x_, y_ = np.array(x_), np.array(y_)
+        scaler.fit(tmp_x_)
+        scaled_x_ = pd.DataFrame(scaler.transform(tmp_x_), columns=tmp_x_.columns)
 
-    return x_, y_, scaler_
+        for column in exclude:
+            scaled_x_[column] = x[column]
+
+        return scaled_x_
+    else:
+        if exclude is not None:
+            tmp_x_ = x.drop(columns=exclude, axis=1)
+            tmp_y_ = y.drop(columns=exclude, axis=1)
+        else:
+            tmp_x_ = x.copy()
+            tmp_y_ = y.copy()
+
+    scaler.fit(tmp_x_)
+    scaled_x_ = pd.DataFrame(scaler.transform(tmp_x_), columns=tmp_x_.columns)
+    scaled_y_ = pd.DataFrame(scaler.transform(tmp_y_), columns=tmp_y_.columns)
+
+    for column in exclude:
+        scaled_x_[column] = x[column]
+        scaled_y_[column] = y[column]
+
+    # save the scaler
+    jb.dump(scaler, 'scaler.pkl')
+
+    return scaled_x_, scaled_y_
+
+
+def prepare_x_y(data: pd.DataFrame) -> (np.ndarray, np.ndarray):
+    """
+    Prepare X and y subsets
+
+    :param data: Dataframe containing values
+    :return: Tuple containing desired format to input to the LSTM model
+    """
+    array_ = data.values
+
+    x = array_[:, 1:]
+    y = array_[:, 0]
+
+    reshaped_x = x.reshape(x.shape[0], 1, x.shape[1])
+
+    return reshaped_x, y

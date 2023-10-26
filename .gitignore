@@ -3,3 +3,6 @@ venv
 credentials.py
 __pycache__/
 .ipynb_checkpoints/
+*.ipynb
+*.pkl
+test.py
