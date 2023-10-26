@@ -117,6 +117,22 @@ def gather_data(client: Client, pair: str = 'BTCUSDT', interval: str = None, per
     return filtered_frame_
 
 
+def zero_replacement(data: pd.DataFrame, replacement: float = 1e-6) -> pd.DataFrame:
+    """
+    Replacing zeros with small values to avoid calculations with infinity
+
+    :param data: Dataframe to be processes
+    :param replacement: Value by which the zeros will be replaced
+    :return: Dataframe with zeros replaced by 1e-6
+    """
+    tmp_ = data.copy()
+
+    for column in tmp_.columns:
+        tmp_[column] = tmp_[column].replace(0.0, replacement)
+
+    return tmp_
+
+
 def rates_of_return(data: pd.DataFrame) -> pd.DataFrame:
     """
     Rates of return preparation
@@ -228,7 +244,7 @@ def normalize(x: pd.DataFrame, y: pd.DataFrame = None, exclude: list | None = No
     :return: Transformed dataframe(s)
     """
 
-    scaler = MinMaxScaler()
+    scaler_ = MinMaxScaler()
 
     if y is None:
         if exclude is not None:
@@ -236,8 +252,8 @@ def normalize(x: pd.DataFrame, y: pd.DataFrame = None, exclude: list | None = No
         else:
             tmp_x_ = x.copy()
 
-        scaler.fit(tmp_x_)
-        scaled_x_ = pd.DataFrame(scaler.transform(tmp_x_), columns=tmp_x_.columns)
+        scaler_.fit(tmp_x_)
+        scaled_x_ = pd.DataFrame(scaler_.transform(tmp_x_), columns=tmp_x_.columns)
 
         for column in exclude:
             scaled_x_[column] = x[column]
@@ -251,32 +267,34 @@ def normalize(x: pd.DataFrame, y: pd.DataFrame = None, exclude: list | None = No
             tmp_x_ = x.copy()
             tmp_y_ = y.copy()
 
-    scaler.fit(tmp_x_)
-    scaled_x_ = pd.DataFrame(scaler.transform(tmp_x_), columns=tmp_x_.columns)
-    scaled_y_ = pd.DataFrame(scaler.transform(tmp_y_), columns=tmp_y_.columns)
+        scaler_.fit(tmp_x_)
+        scaled_x_ = pd.DataFrame(scaler_.transform(tmp_x_), columns=tmp_x_.columns)
+        scaled_y_ = pd.DataFrame(scaler_.transform(tmp_y_), columns=tmp_y_.columns)
 
-    for column in exclude:
-        scaled_x_[column] = x[column]
-        scaled_y_[column] = y[column]
+        for column in exclude:
+            scaled_x_[column] = x[column]
+            scaled_y_[column] = y[column]
 
-    # save the scaler
-    jb.dump(scaler, 'scaler.pkl')
+    # save the scaler_
+    jb.dump(scaler_, 'scaler_.pkl')
 
     return scaled_x_, scaled_y_
 
 
-def prepare_x_y(data: pd.DataFrame) -> (np.ndarray, np.ndarray):
+def prepare_x_y(data: pd.DataFrame, target: str = 'target') -> (np.ndarray, np.ndarray):
     """
     Prepare X and y subsets
 
     :param data: Dataframe containing values
+    :param target: Target column
     :return: Tuple containing desired format to input to the LSTM model
     """
-    array_ = data.values
+    x_ = data.copy()
+    y_ = x_.pop(target)
 
-    x = array_[:, 1:]
-    y = array_[:, 0]
+    x_values_ = x_.values
+    y_values_ = y_.values
 
-    reshaped_x = x.reshape(x.shape[0], 1, x.shape[1])
+    reshaped_x_ = x_values_.reshape(x_values_.shape[0], 1, x_values_.shape[1])
 
-    return reshaped_x, y
+    return reshaped_x_, y_values_

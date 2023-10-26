@@ -1,8 +1,8 @@
-python-binance
+python-binance~=1.0.19
 pandas~=2.1.0
 numpy~=1.24.3
 python-dateutil~=2.8.2
 scikit-learn~=1.3.0
 plotly~=5.16.1
-jupyter
-binance
+jupyter~=1.0.0
+joblib~=1.3.2
