@@ -1,5 +1,3 @@
-from typing import Tuple
-
 from pandas import DataFrame
 
 from credentials import api, secret
