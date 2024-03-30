@@ -68,7 +68,8 @@ def data_range(period: str = None, start: str = None, stop: str = None) -> (int,
         raise Exception(e)
 
 
-def gather_data(client: Client = market_connection(), pair: str = 'BTCUSDT', interval: str = None, period: str = None, start: str = None,
+def gather_data(client: Client = market_connection(), pair: str = 'BTCUSDT', interval: str = None, period: str = None,
+                start: str = None,
                 stop: str = None) -> pd.DataFrame:
     """
     Gathers data
@@ -99,7 +100,7 @@ def gather_data(client: Client = market_connection(), pair: str = 'BTCUSDT', int
 
     frame_ = pd.DataFrame(list_of_trades_,
                           columns=['open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset',
-                                   'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume',
+                                   'n_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume',
                                    'ignore'])
 
     filtered_frame_ = pd.DataFrame()
@@ -107,7 +108,7 @@ def gather_data(client: Client = market_connection(), pair: str = 'BTCUSDT', int
     filtered_frame_['open_time'] = pd.to_datetime(frame_['open_time'], unit='ms')
     filtered_frame_['close_time'] = pd.to_datetime(frame_['close_time'], unit='ms')
 
-    for name_ in ['open', 'high', 'low', 'close', 'volume']:
+    for name_ in ['open', 'high', 'low', 'close', 'volume', 'n_trades']:
         filtered_frame_[name_] = pd.to_numeric(frame_[name_])
 
     return filtered_frame_
