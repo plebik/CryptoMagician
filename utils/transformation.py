@@ -73,3 +73,44 @@ def partition(frame: pd.DataFrame) -> dict:
                    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']}
 
     return sorted_dict
+
+
+def prepare_data_for_ranking(data_, variable: str) -> dict:
+    tmp_dict_ = {}
+    for i in ['0-4', '4-8', '8-12', '12-16', '16-20', '20-24']:
+        tmp_interval_ = [data_[weekday][i][variable].values for weekday in data_.keys()]
+        tmp_interval_ = pd.DataFrame(tmp_interval_).transpose()
+        tmp_interval_.columns = data_.keys()
+        tmp_dict_[i] = tmp_interval_
+
+    return tmp_dict_
+
+
+def prepare_ranking(data: dict) -> dict:
+    rankings = {}
+    for interval in data.keys():
+        ls = []
+        for series in data[interval].values:
+            try:
+                sorted_values = sorted(series, reverse=True)
+                map_ = {key: value for key, value in zip(sorted_values, range(1, len(sorted_values) + 1))}
+                ls.append([map_[s] for s in series])
+            except:
+                pass
+
+        ranking = pd.DataFrame(ls,
+                               columns=['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
+
+        tmp_ls = []
+        for w in ranking.columns:
+            tmp_ls.append({a: b for a, b in ranking[w].value_counts().items()})
+
+        for index, value in enumerate(tmp_ls):
+            tmp_ls[index] = dict(sorted(value.items()))
+
+        ranking_frame = pd.DataFrame(tmp_ls).transpose()
+        ranking_frame.columns = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+        rankings[interval] = ranking_frame
+
+    return rankings
